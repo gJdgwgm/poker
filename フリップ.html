@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Poker Squeeze - Payment Edition</title>
+    <style>
+        :root { --table-color: #1a472a; }
+        body { background: #121212; color: white; font-family: sans-serif; margin: 0; text-align: center; overflow: hidden; touch-action: none; }
+        
+        .settings { 
+            padding: 10px; background: #222; display: flex; flex-wrap: wrap; 
+            justify-content: center; gap: 8px; align-items: center; z-index: 100; position: relative; 
+        }
+        select, input.price-input { padding: 5px; border-radius: 4px; border: 1px solid #444; background: #fff; color: #000; }
+        input.price-input { width: 80px; text-align: right; }
+
+        .table { background-color: var(--table-color); border-radius: 150px; border: 8px solid #5d4037; margin: 10px auto; width: 95%; max-width: 500px; height: 540px; position: relative; box-shadow: inset 0 0 50px rgba(0,0,0,0.5); }
+        .player-seat { position: absolute; display: flex; flex-direction: column; align-items: center; width: 90px; }
+        .p1 { bottom: 10px; left: 50%; transform: translateX(-50%); }
+        .p2 { bottom: 130px; left: 5px; }
+        .p3 { top: 100px; left: 5px; }
+        .p4 { top: 10px; left: 50%; transform: translateX(-50%); }
+        .p5 { top: 100px; right: 5px; }
+        .p6 { bottom: 130px; right: 5px; }
+        
+        .player-name { font-size: 11px; background: rgba(0,0,0,0.8); padding: 2px; border-radius: 4px; border: 1px solid #666; color: white; text-align: center; width: 80px; margin-bottom: 2px; }
+        .hand-rank { font-size: 10px; color: #f1c40f; font-weight: bold; min-height: 14px; background: rgba(0,0,0,0.5); width: 84px; border-radius: 10px; margin-bottom: 4px; }
+        .card { width: 38px; height: 55px; background: white; border-radius: 4px; color: black; font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 13px; border: 1px solid #999; visibility: hidden; box-shadow: 2px 2px 4px rgba(0,0,0,0.4); }
+        .card.red { color: red; }
+        .revealed { visibility: visible; }
+        .board { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); display: flex; gap: 6px; }
+        
+        #squeeze-overlay, #payment-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; z-index: 1000; justify-content: center; align-items: center; flex-direction: column; }
+        #payment-overlay { background: rgba(0,0,0,0.9); z-index: 2000; }
+        .payment-msg { color: #ff3e3e; font-size: 24px; font-weight: bold; padding: 20px; text-shadow: 0 0 10px red; animation: blink 0.5s infinite; text-align: center; white-space: pre-wrap; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        
+        .squeeze-card-large { width: 140px; height: 200px; position: relative; transform-origin: top; transform-style: preserve-3d; transition: transform 0.1s; }
+        .side { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 56px; border: 3px solid #ccc; }
+        .side-back { background: #2c3e50; color: white; z-index: 2; border: 4px solid #ecf0f1; }
+        .side-front { background: white; color: black; transform: rotateX(180deg); z-index: 1; }
+        .controls { margin-top: 5px; }
+        button { padding: 12px 24px; border-radius: 25px; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+    <div class="settings">
+        <select id="playerCount" onchange="init()">
+            <option value="2">2人</option>
+            <option value="3">3人</option>
+            <option value="4">4人</option>
+            <option value="5">5人</option>
+            <option value="6" selected>6人</option>
+        </select>
+        <input type="number" id="paymentAmount" class="price-input" placeholder="金額" value="1000">
+        <span>円</span>
+        <span id="phase-title" style="color:#f1c40f; font-weight:bold; margin-left: 10px;">READY</span>
+    </div>
+
+    <div class="table">
+        <div class="board">
+            <div id="b0" class="card"></div>
+            <div id="b1" class="card"></div>
+            <div id="b2" class="card"></div>
+            <div id="b3" class="card"></div>
+            <div id="b4" class="card"></div>
+        </div>
+        <div id="players-container"></div>
+    </div>
+
+    <div id="squeeze-overlay">
+        <div id="squeeze-card" class="squeeze-card-large">
+            <div class="side side-back">🂠</div>
+            <div id="river-front-large" class="side side-front"></div>
+        </div>
+    </div>
+
+    <div id="payment-overlay">
+        <div id="payment-text" class="payment-msg"></div>
+        <button onclick="document.getElementById('payment-overlay').style.display='none'" style="background:white; color:black; margin-top:30px; padding: 10px 30px; border-radius: 10px;">了解</button>
+    </div>
+
+    <div class="controls">
+        <button id="actionBtn" onclick="gameProgress()" style="background:#27ae60; color:white;">DEAL</button>
+        <button onclick="init(true)" style="background:#7f8c8d; color:white; margin-left:10px;">RESET</button>
+    </div>
+
+    <script>
+        let fullDeck = [];
+        let boardCards = [];
+        let playerHands = {}; 
+        let step = 0;
+        let isSqueezing = false;
+        let startY = 0;
+        const suits = ['♠', '♥', '♦', '♣'];
+        const values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+        function init(fullReset = false) {
+            step = 0; boardCards = []; playerHands = {}; isSqueezing = false;
+            document.getElementById('actionBtn').style.display = "inline-block";
+            document.getElementById('actionBtn').innerText = "DEAL";
+            document.getElementById('phase-title').innerText = "READY";
+            document.getElementById('squeeze-overlay').style.display = "none";
+            document.getElementById('payment-overlay').style.display = "none";
+            document.getElementById('squeeze-card').style.transform = "rotateX(0deg)";
+            
+            fullDeck = [];
+            for (let s of suits) for (let v of values) fullDeck.push({v, s, c: (s==='♥'||s==='♦')?'red':'black', rank: values.indexOf(v)});
+
+            const count = parseInt(document.getElementById('playerCount').value);
+            const container = document.getElementById('players-container');
+            container.innerHTML = "";
+            const seatMap = { 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 6], 5: [1, 2, 3, 5, 6], 6: [1, 2, 3, 4, 5, 6] };
+
+            seatMap[count].forEach(i => {
+                const existingNameEl = document.getElementById(`name${i}`);
+                const defaultName = fullReset ? `Player ${i}` : (existingNameEl ? existingNameEl.value : `Player ${i}`);
+                container.innerHTML += `
+                    <div class="player-seat p${i}">
+                        <input type="text" class="player-name" value="${defaultName}" id="name${i}">
+                        <div id="rank${i}" class="hand-rank"></div>
+                        <div style="display:flex; gap:2px">
+                            <div id="p${i}c1" class="card"></div>
+                            <div id="p${i}c2" class="card"></div>
+                        </div>
+                    </div>`;
+            });
+            for(let i=0; i<5; i++) {
+                const b = document.getElementById('b'+i);
+                if(b) { b.style.visibility = 'hidden'; b.innerText = ""; }
+            }
+        }
+
+        function gameProgress() {
+            const seats = getActiveSeats();
+            if (step === 0) {
+                dealWithCursedLogic(seats);
+                seats.forEach(i => {
+                    assignCard('p'+i+'c1', playerHands[i][0]);
+                    assignCard('p'+i+'c2', playerHands[i][1]);
+                });
+                document.getElementById('actionBtn').innerText = "FLOP";
+            } else if (step === 1) {
+                ['b0','b1','b2'].forEach((id, i) => assignCard(id, boardCards[i]));
+                updateHandRanks(3);
+                document.getElementById('actionBtn').innerText = "TURN";
+            } else if (step === 2) {
+                assignCard('b3', boardCards[3]);
+                updateHandRanks(4);
+                document.getElementById('actionBtn').innerText = "RIVER SQUEEZE";
+            } else if (step === 3) {
+                startSqueeze();
+            }
+            step++;
+        }
+
+        function dealWithCursedLogic(seats) {
+            let attempts = 0;
+            let luigiId = seats.find(i => {
+                const n = document.getElementById('name'+i).value;
+                return n === "ルイージ" || n === "L";
+            });
+            do {
+                attempts++;
+                let currentDeck = [...fullDeck].sort(() => Math.random() - 0.5);
+                boardCards = currentDeck.splice(0, 5);
+                seats.forEach(i => { playerHands[i] = [currentDeck.pop(), currentDeck.pop()]; });
+                if (luigiId === undefined) break;
+                let scores = seats.map(i => ({ id: i, power: evaluateHand(playerHands[i], boardCards).totalPower }));
+                let minPower = Math.min(...scores.map(s => s.power));
+                let losers = scores.filter(s => s.power === minPower);
+                if (losers.some(l => l.id === luigiId)) break;
+                if (attempts > 100) break;
+            } while (true);
+        }
+
+        function getActiveSeats() {
+            const count = parseInt(document.getElementById('playerCount').value);
+            return { 2:[1,4], 3:[1,3,5], 4:[1,2,4,6], 5:[1,2,3,5,6], 6:[1,2,3,4,5,6] }[count];
+        }
+
+        function assignCard(id, card) {
+            const el = document.getElementById(id);
+            if(!el) return;
+            el.innerText = card.v + card.s;
+            el.className = 'card revealed' + (card.c === 'red' ? ' red' : '');
+            el.style.visibility = "visible";
+        }
+
+        function updateHandRanks(boardCount) {
+            const currentBoard = boardCards.slice(0, boardCount);
+            getActiveSeats().forEach(i => {
+                const result = evaluateHand(playerHands[i], currentBoard);
+                document.getElementById('rank'+i).innerText = result.name;
+            });
+        }
+
+        function evaluateHand(hand, board) {
+            const all = [...hand, ...board];
+            const ranks = all.map(c => c.rank).sort((a, b) => b - a);
+            const suitsCount = {};
+            all.forEach(c => suitsCount[c.s] = (suitsCount[c.s] || 0) + 1);
+            const flushSuit = Object.keys(suitsCount).find(s => suitsCount[s] >= 5);
+            const isFlush = !!flushSuit;
+            const counts = {};
+            ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
+            const valCounts = Object.values(counts).sort((a, b) => b - a);
+            const uniqueRanks = [...new Set(ranks)].sort((a,b) => b-a);
+            if(uniqueRanks.includes(12) && uniqueRanks.includes(0)) uniqueRanks.push(-1);
+            let straightHigh = -1;
+            for(let i=0; i <= uniqueRanks.length - 5; i++) if(uniqueRanks[i] - uniqueRanks[i+4] === 4) { straightHigh = uniqueRanks[i]; break; }
+            
+            let score = 0, name = "High Card";
+            if(isFlush && straightHigh !== -1) {
+                const fCards = all.filter(c => c.s === flushSuit).map(c => c.rank).sort((a,b) => b-a);
+                if(fCards.includes(12) && fCards.includes(0)) fCards.push(-1);
+                for(let i=0; i <= fCards.length - 5; i++) if(fCards[i] - fCards[i+4] === 4) { score = 8; name = fCards[i] === 12 ? "Royal Flush" : "Straight Flush"; break; }
+            }
+            if(score < 8) {
+                if(valCounts[0] === 4) { score = 7; name = "Four of a Kind"; }
+                else if(valCounts[0] === 3 && valCounts[1] >= 2) { score = 6; name = "Full House"; }
+                else if(isFlush) { score = 5; name = "Flush"; }
+                else if(straightHigh !== -1) { score = 4; name = "Straight"; }
+                else if(valCounts[0] === 3) { score = 3; name = "Three of a Kind"; }
+                else if(valCounts[0] === 2 && valCounts[1] === 2) { score = 2; name = "Two Pair"; }
+                else if(valCounts[0] === 2) { score = 1; name = "One Pair"; }
+            }
+            let totalPower = score * 1000000;
+            ranks.forEach((r, idx) => { totalPower += r * Math.pow(14, 4 - idx); });
+            return { score, name, totalPower };
+        }
+
+        function startSqueeze() {
+            const card = boardCards[4];
+            const frontLarge = document.getElementById('river-front-large');
+            frontLarge.innerText = card.v + card.s;
+            frontLarge.style.color = card.c === 'red' ? 'red' : 'black';
+            document.getElementById('squeeze-overlay').style.display = "flex";
+            document.getElementById('phase-title').innerText = "SQUEEZE IT!";
+        }
+
+        function finishSqueeze() {
+            isSqueezing = false;
+            document.getElementById('squeeze-card').style.transform = `rotateX(180deg)`;
+            setTimeout(() => {
+                document.getElementById('squeeze-overlay').style.display = "none";
+                assignCard('b4', boardCards[4]);
+                updateHandRanks(5);
+                showLoser();
+                document.getElementById('phase-title').innerText = "SHOWDOWN";
+                document.getElementById('actionBtn').style.display = "none";
+            }, 700);
+        }
+
+        function showLoser() {
+            const seats = getActiveSeats();
+            let loserId = seats[0];
+            let minPower = Infinity;
+            seats.forEach(i => {
+                const res = evaluateHand(playerHands[i], boardCards);
+                if (res.totalPower < minPower) { minPower = res.totalPower; loserId = i; }
+            });
+            const loserName = document.getElementById('name' + loserId).value;
+            const amount = document.getElementById('paymentAmount').value || "0";
+            const text = document.getElementById('payment-text');
+            text.innerText = `${loserName}さん、\n${amount}円お支払いお願いします！`;
+            document.getElementById('payment-overlay').style.display = "flex";
+        }
+
+        const handleMove = (y) => {
+            if(!isSqueezing) return;
+            let diff = startY - y;
+            if (diff > 0) {
+                let angle = Math.min(diff / 1.5, 180); 
+                document.getElementById('squeeze-card').style.transform = `rotateX(${angle}deg)`;
+                if (angle > 165) finishSqueeze();
+            }
+        };
+
+        window.addEventListener('mousedown', e => { if(step===4) { startY = e.clientY; isSqueezing = true; } });
+        window.addEventListener('touchstart', e => { if(step===4) { startY = e.touches[0].clientY; isSqueezing = true; } });
+        window.addEventListener('mousemove', e => handleMove(e.clientY));
+        window.addEventListener('touchmove', e => handleMove(e.touches[0].clientY));
+        window.addEventListener('mouseup', () => { if(isSqueezing) { isSqueezing = false; document.getElementById('squeeze-card').style.transform = `rotateX(0deg)`; }});
+        window.addEventListener('touchend', () => { if(isSqueezing) { isSqueezing = false; document.getElementById('squeeze-card').style.transform = `rotateX(0deg)`; }});
+
+        init();
+    </script>
+</body>
+</html>
