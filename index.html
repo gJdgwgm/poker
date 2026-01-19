@@ -3,18 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Poker Squeeze - Payment Edition</title>
+    <title>Poker Squeeze - Fixed Logic</title>
     <style>
         :root { --table-color: #1a472a; }
         body { background: #121212; color: white; font-family: sans-serif; margin: 0; text-align: center; overflow: hidden; touch-action: none; }
-        
-        .settings { 
-            padding: 10px; background: #222; display: flex; flex-wrap: wrap; 
-            justify-content: center; gap: 8px; align-items: center; z-index: 100; position: relative; 
-        }
+        .settings { padding: 10px; background: #222; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; align-items: center; z-index: 100; position: relative; }
         select, input.price-input { padding: 5px; border-radius: 4px; border: 1px solid #444; background: #fff; color: #000; }
         input.price-input { width: 80px; text-align: right; }
-
         .table { background-color: var(--table-color); border-radius: 150px; border: 8px solid #5d4037; margin: 10px auto; width: 95%; max-width: 500px; height: 540px; position: relative; box-shadow: inset 0 0 50px rgba(0,0,0,0.5); }
         .player-seat { position: absolute; display: flex; flex-direction: column; align-items: center; width: 90px; }
         .p1 { bottom: 10px; left: 50%; transform: translateX(-50%); }
@@ -23,19 +18,16 @@
         .p4 { top: 10px; left: 50%; transform: translateX(-50%); }
         .p5 { top: 100px; right: 5px; }
         .p6 { bottom: 130px; right: 5px; }
-        
         .player-name { font-size: 11px; background: rgba(0,0,0,0.8); padding: 2px; border-radius: 4px; border: 1px solid #666; color: white; text-align: center; width: 80px; margin-bottom: 2px; }
         .hand-rank { font-size: 10px; color: #f1c40f; font-weight: bold; min-height: 14px; background: rgba(0,0,0,0.5); width: 84px; border-radius: 10px; margin-bottom: 4px; }
         .card { width: 38px; height: 55px; background: white; border-radius: 4px; color: black; font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 13px; border: 1px solid #999; visibility: hidden; box-shadow: 2px 2px 4px rgba(0,0,0,0.4); }
         .card.red { color: red; }
         .revealed { visibility: visible; }
         .board { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); display: flex; gap: 6px; }
-        
         #squeeze-overlay, #payment-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; z-index: 1000; justify-content: center; align-items: center; flex-direction: column; }
         #payment-overlay { background: rgba(0,0,0,0.9); z-index: 2000; }
         .payment-msg { color: #ff3e3e; font-size: 24px; font-weight: bold; padding: 20px; text-shadow: 0 0 10px red; animation: blink 0.5s infinite; text-align: center; white-space: pre-wrap; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        
         .squeeze-card-large { width: 140px; height: 200px; position: relative; transform-origin: top; transform-style: preserve-3d; transition: transform 0.1s; }
         .side { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 56px; border: 3px solid #ccc; }
         .side-back { background: #2c3e50; color: white; z-index: 2; border: 4px solid #ecf0f1; }
@@ -172,7 +164,7 @@
                 let minPower = Math.min(...scores.map(s => s.power));
                 let losers = scores.filter(s => s.power === minPower);
                 if (losers.some(l => l.id === luigiId)) break;
-                if (attempts > 100) break;
+                if (attempts > 300) break; 
             } while (true);
         }
 
@@ -199,36 +191,117 @@
 
         function evaluateHand(hand, board) {
             const all = [...hand, ...board];
-            const ranks = all.map(c => c.rank).sort((a, b) => b - a);
             const suitsCount = {};
             all.forEach(c => suitsCount[c.s] = (suitsCount[c.s] || 0) + 1);
             const flushSuit = Object.keys(suitsCount).find(s => suitsCount[s] >= 5);
-            const isFlush = !!flushSuit;
-            const counts = {};
-            ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
-            const valCounts = Object.values(counts).sort((a, b) => b - a);
-            const uniqueRanks = [...new Set(ranks)].sort((a,b) => b-a);
-            if(uniqueRanks.includes(12) && uniqueRanks.includes(0)) uniqueRanks.push(-1);
-            let straightHigh = -1;
-            for(let i=0; i <= uniqueRanks.length - 5; i++) if(uniqueRanks[i] - uniqueRanks[i+4] === 4) { straightHigh = uniqueRanks[i]; break; }
             
-            let score = 0, name = "High Card";
-            if(isFlush && straightHigh !== -1) {
-                const fCards = all.filter(c => c.s === flushSuit).map(c => c.rank).sort((a,b) => b-a);
-                if(fCards.includes(12) && fCards.includes(0)) fCards.push(-1);
-                for(let i=0; i <= fCards.length - 5; i++) if(fCards[i] - fCards[i+4] === 4) { score = 8; name = fCards[i] === 12 ? "Royal Flush" : "Straight Flush"; break; }
+            const counts = {};
+            all.forEach(c => counts[c.rank] = (counts[c.rank] || 0) + 1);
+            
+            const sortedRanks = all.map(c => c.rank).sort((a,b) => b-a);
+            const uniqueRanks = [...new Set(sortedRanks)];
+            
+            // ストレート判定
+            let straightHigh = -1;
+            let checkRanks = [...uniqueRanks];
+            if(checkRanks.includes(12)) checkRanks.push(-1); // A-5用
+            for(let i=0; i <= checkRanks.length - 5; i++) {
+                if(checkRanks[i] - checkRanks[i+4] === 4) { straightHigh = checkRanks[i]; break; }
             }
-            if(score < 8) {
-                if(valCounts[0] === 4) { score = 7; name = "Four of a Kind"; }
-                else if(valCounts[0] === 3 && valCounts[1] >= 2) { score = 6; name = "Full House"; }
-                else if(isFlush) { score = 5; name = "Flush"; }
-                else if(straightHigh !== -1) { score = 4; name = "Straight"; }
-                else if(valCounts[0] === 3) { score = 3; name = "Three of a Kind"; }
-                else if(valCounts[0] === 2 && valCounts[1] === 2) { score = 2; name = "Two Pair"; }
-                else if(valCounts[0] === 2) { score = 1; name = "One Pair"; }
+
+            // フラッシュ判定
+            let isFlush = !!flushSuit;
+            let flushRanks = isFlush ? all.filter(c => c.s === flushSuit).map(c => c.rank).sort((a,b) => b-a) : [];
+
+            // 役判定ロジック
+            let score = 0, name = "High Card", tiebreakers = [];
+
+            // 1. ストレートフラッシュ
+            if(isFlush) {
+                let fCheck = [...new Set(flushRanks)];
+                if(fCheck.includes(12)) fCheck.push(-1);
+                for(let i=0; i <= fCheck.length - 5; i++) {
+                    if(fCheck[i] - fCheck[i+4] === 4) {
+                        score = 8; name = (fCheck[i] === 12) ? "Royal Flush" : "Straight Flush";
+                        tiebreakers = [fCheck[i]]; break;
+                    }
+                }
             }
-            let totalPower = score * 1000000;
-            ranks.forEach((r, idx) => { totalPower += r * Math.pow(14, 4 - idx); });
+
+            // 2. フォーカード
+            if(score === 0) {
+                let quad = Object.keys(counts).find(r => counts[r] === 4);
+                if(quad) {
+                    score = 7; name = "Four of a Kind";
+                    let kicker = sortedRanks.filter(r => r != quad)[0];
+                    tiebreakers = [parseInt(quad), kicker];
+                }
+            }
+
+            // 3. フルハウス
+            if(score === 0) {
+                let trips = Object.keys(counts).filter(r => counts[r] === 3).sort((a,b) => b-a);
+                let pairs = Object.keys(counts).filter(r => counts[r] >= 2).sort((a,b) => b-a);
+                if(trips.length >= 1 && pairs.length >= 2) {
+                    score = 6; name = "Full House";
+                    let pair = pairs.find(r => r != trips[0]);
+                    tiebreakers = [parseInt(trips[0]), parseInt(pair)];
+                }
+            }
+
+            // 4. フラッシュ
+            if(score === 0 && isFlush) {
+                score = 5; name = "Flush";
+                tiebreakers = flushRanks.slice(0, 5);
+            }
+
+            // 5. ストレート
+            if(score === 0 && straightHigh !== -1) {
+                score = 4; name = "Straight";
+                tiebreakers = [straightHigh];
+            }
+
+            // 6. 三カード
+            if(score === 0) {
+                let trips = Object.keys(counts).find(r => counts[r] === 3);
+                if(trips) {
+                    score = 3; name = "Three of a Kind";
+                    let kickers = sortedRanks.filter(r => r != trips).slice(0, 2);
+                    tiebreakers = [parseInt(trips), ...kickers];
+                }
+            }
+
+            // 7. 二ペア
+            if(score === 0) {
+                let pairs = Object.keys(counts).filter(r => counts[r] === 2).sort((a,b) => b-a);
+                if(pairs.length >= 2) {
+                    score = 2; name = "Two Pair";
+                    let kicker = sortedRanks.filter(r => r != pairs[0] && r != pairs[1])[0];
+                    tiebreakers = [parseInt(pairs[0]), parseInt(pairs[1]), kicker];
+                }
+            }
+
+            // 8. ワンペア
+            if(score === 0) {
+                let pair = Object.keys(counts).find(r => counts[r] === 2);
+                if(pair) {
+                    score = 1; name = "One Pair";
+                    let kickers = sortedRanks.filter(r => r != pair).slice(0, 3);
+                    tiebreakers = [parseInt(pair), ...kickers];
+                }
+            }
+
+            // 9. ハイカード
+            if(score === 0) {
+                tiebreakers = sortedRanks.slice(0, 5);
+            }
+
+            // 数値化 (タイブレーカーを14進数で重み付け)
+            let totalPower = score * Math.pow(14, 6);
+            tiebreakers.forEach((val, idx) => {
+                totalPower += (val + 1) * Math.pow(14, 5 - idx);
+            });
+
             return { score, name, totalPower };
         }
 
