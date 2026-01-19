@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Poker Squeeze - Multi Loser Edition</title>
+    <title>Poker Squeeze - Multi Loser Fix</title>
     <style>
         :root { --table-color: #1a472a; }
         body { background: #121212; color: white; font-family: sans-serif; margin: 0; text-align: center; overflow: hidden; touch-action: none; }
@@ -150,7 +150,7 @@
 
         function dealWithCursedLogic(seats) {
             let attempts = 0;
-            let luigiId = seats.find(i => {
+            const luigiId = seats.find(i => {
                 const n = document.getElementById('name'+i).value;
                 return n === "ルイージ" || n === "L";
             });
@@ -159,13 +159,14 @@
                 let currentDeck = [...fullDeck].sort(() => Math.random() - 0.5);
                 boardCards = currentDeck.splice(0, 5);
                 seats.forEach(i => { playerHands[i] = [currentDeck.pop(), currentDeck.pop()]; });
-                if (luigiId === undefined) break;
                 
+                if (luigiId === undefined) break;
+
                 let scores = seats.map(i => ({ id: i, power: evaluateHand(playerHands[i], boardCards).totalPower }));
                 let minPower = Math.min(...scores.map(s => s.power));
                 let losers = scores.filter(s => s.power === minPower);
-                
-                // ルイージが負けグループに入っていればOK
+
+                // ルイージが含まれていれば続行（単独でも複数人でもOK）
                 if (losers.some(l => l.id === luigiId)) break;
                 if (attempts > 300) break;
             } while (true);
@@ -280,16 +281,24 @@
 
         function showLoser() {
             const seats = getActiveSeats();
-            let scores = seats.map(i => ({ id: i, power: evaluateHand(playerHands[i], boardCards).totalPower }));
-            let minPower = Math.min(...scores.map(s => s.power));
+            // 全プレイヤーのスコアを再計算
+            let results = seats.map(i => ({
+                name: document.getElementById('name' + i).value,
+                power: evaluateHand(playerHands[i], boardCards).totalPower
+            }));
+
+            // 最小パワー（最下位）を特定
+            let minPower = Math.min(...results.map(r => r.power));
             
-            // 最下位が複数いる場合に対応
-            let losers = scores.filter(s => s.power === minPower);
-            let loserNames = losers.map(l => document.getElementById('name' + l.id).value).join('さん、');
+            // 最下位の人を全員抽出
+            let losers = results.filter(r => r.power === minPower);
+            
+            // 名前の結合処理：「Aさん、Bさん」
+            let displayNames = losers.map(l => l.name).join('さん、');
             
             const amount = document.getElementById('paymentAmount').value || "0";
             const text = document.getElementById('payment-text');
-            text.innerText = `${loserNames}さん、\n${amount}円お支払いお願いします！`;
+            text.innerText = `${displayNames}さん、\n${amount}円お支払いお願いします！`;
             document.getElementById('payment-overlay').style.display = "flex";
         }
 
