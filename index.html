@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Poker Squeeze - Multi Loser Fix</title>
+    <title>Poker Squeeze - Ultimate Fix</title>
     <style>
         :root { --table-color: #1a472a; }
         body { background: #121212; color: white; font-family: sans-serif; margin: 0; text-align: center; overflow: hidden; touch-action: none; }
@@ -152,8 +152,9 @@
             let attempts = 0;
             const luigiId = seats.find(i => {
                 const n = document.getElementById('name'+i).value;
-                return n === "たか" || n === "L";
+                return n === "たか" || n === "タカ";
             });
+            
             do {
                 attempts++;
                 let currentDeck = [...fullDeck].sort(() => Math.random() - 0.5);
@@ -166,9 +167,17 @@
                 let minPower = Math.min(...scores.map(s => s.power));
                 let losers = scores.filter(s => s.power === minPower);
 
-                // ルイージが含まれていれば続行（単独でも複数人でもOK）
-                if (losers.some(l => l.id === luigiId)) break;
-                if (attempts > 300) break;
+                // 全員同点（チョップ）は回避する
+                if (losers.length === seats.length && attempts < 500) continue;
+
+                // ルイージが負けグループに入っているか
+                if (losers.some(l => l.id === luigiId)) {
+                    // 最初の400回は「単独負け」以外は認めない
+                    if (losers.length > 1 && attempts < 400) continue;
+                    break; 
+                }
+                
+                if (attempts > 1000) break; 
             } while (true);
         }
 
@@ -244,7 +253,7 @@
             }
             if(score === 0) {
                 let pairs = Object.keys(counts).filter(r => counts[r] === 2).sort((a,b) => b-a);
-                if(pairs.length >= 2) { score = 2; name = "Two Pair"; tiebreakers = [parseInt(pairs[0]), parseInt(pairs[1]), sortedRanks.find(r => r != pairs[0] && r != pairs[1])]; }
+                if(pairs.length >= 2) { score = 2; name = "Two Pair"; tiebreakers = [parseInt(pairs[0]), parseInt(pairs[1]), sortedRanks.filter(r => r != pairs[0] && r != pairs[1])[0]]; }
             }
             if(score === 0) {
                 let pair = Object.keys(counts).find(r => counts[r] === 2);
@@ -281,19 +290,13 @@
 
         function showLoser() {
             const seats = getActiveSeats();
-            // 全プレイヤーのスコアを再計算
             let results = seats.map(i => ({
                 name: document.getElementById('name' + i).value,
                 power: evaluateHand(playerHands[i], boardCards).totalPower
             }));
 
-            // 最小パワー（最下位）を特定
             let minPower = Math.min(...results.map(r => r.power));
-            
-            // 最下位の人を全員抽出
             let losers = results.filter(r => r.power === minPower);
-            
-            // 名前の結合処理：「Aさん、Bさん」
             let displayNames = losers.map(l => l.name).join('さん、');
             
             const amount = document.getElementById('paymentAmount').value || "0";
